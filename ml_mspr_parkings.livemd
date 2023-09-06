@@ -19,14 +19,23 @@ require Explorer.DataFrame, as: DF
 ```
 
 ```elixir
+File.ls!()
+```
+
+```elixir
+# Adaptation à faire pour que le path corresponde au chemin de là où sont les données
 path_parkings =
-  "/Users/olivierdeprez/Library/CloudStorage/OneDrive-Personnel/Boulot/7lieues/PRODUCT/Technical_stuff/Code/sources/tuto_vitef/postgres_repo/parkings_poitiers.csv"
+  "/data/parkings_poitiers_v3.csv"
 
 df = Explorer.DataFrame.from_csv!(path_parkings)
 ```
 
 ```elixir
 df[["places"]]
+```
+
+```elixir
+df["places"] |> Explorer.Series.count()
 ```
 
 ```elixir
@@ -153,7 +162,7 @@ Nx.abs(Nx.subtract(Nx.squeeze(y_test), y_pred))
 Kino.Layout.grid(
   [
     y_test,
-    y_pred |> Nx.reshape({567, 1})
+    y_pred |> Nx.reshape({462, 1})
   ],
   columns: 2,
   boxed: true
@@ -163,7 +172,7 @@ Kino.Layout.grid(
 ```elixir
 # Même chose, avec visuel "rapproché" en un seul vecteur
 
-Nx.concatenate([y_test, y_pred |> Nx.reshape({567, 1})], axis: 1)
+Nx.concatenate([y_test, y_pred |> Nx.reshape({462, 1})], axis: 1)
 ```
 
 ```elixir
