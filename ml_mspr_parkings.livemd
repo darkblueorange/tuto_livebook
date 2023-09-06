@@ -1,0 +1,231 @@
+# EXGBoost: Gradient Boosting - MSPR parkings (Adel)
+
+## Section
+
+https://dockyard.com/blog/2023/07/18/introducing-exgboost-gradient-boosting-in-elixir
+
+```elixir
+Mix.install([
+  {:nx, "~> 0.5"},
+  {:exgboost, "~> 0.2"},
+  {:scholar, "~> 0.1"},
+  {:explorer, "~> 0.5"},
+  {:kino, "~> 0.10.0"}
+])
+```
+
+```elixir
+require Explorer.DataFrame, as: DF
+```
+
+```elixir
+path_parkings =
+  "/Users/olivierdeprez/Library/CloudStorage/OneDrive-Personnel/Boulot/7lieues/PRODUCT/Technical_stuff/Code/sources/tuto_vitef/postgres_repo/parkings_poitiers.csv"
+
+df = Explorer.DataFrame.from_csv!(path_parkings)
+```
+
+```elixir
+df[["places"]]
+```
+
+```elixir
+df |> DF.names()
+```
+
+```elixir
+df
+|> DF.arrange(taux_doccupation)
+# |> DF.print(limit: 25)
+|> DF.print()
+```
+
+```elixir
+df = DF.discard(df, 0)
+```
+
+```elixir
+df =
+  DF.mutate(
+    df,
+    for col <- across(~w[nom]) do
+      {col.name, Explorer.Series.cast(col, :category)}
+    end
+  )
+```
+
+```elixir
+keep_time_only =
+  fn date_string ->
+    # date_string est de la forme: "2023-09-05 09:34:10"
+    [_, time_remains] = date_string |> String.split(" ")
+    time_remains |> String.replace(":", "")
+  end
+```
+
+```elixir
+df =
+  df
+  |> Explorer.DataFrame.put(
+    "maj_base",
+    Explorer.Series.transform(
+      df["derniere_mise_a_jour_base"],
+      &keep_time_only.(&1)
+    )
+  )
+  |> Explorer.DataFrame.put(
+    "actu_bo",
+    Explorer.Series.transform(
+      df["derniere_actualisation_bo"],
+      &keep_time_only.(&1)
+    )
+  )
+```
+
+```elixir
+n_rows = DF.n_rows(df)
+split_at = floor(0.8 * n_rows)
+
+df = DF.shuffle(df)
+train_df = DF.slice(df, 0..split_at)
+test_df = DF.slice(df, split_at..-1)
+```
+
+```elixir
+features = ~w(capacite taux_doccupation nom maj_base actu_bo)
+targets = ~w(places)
+
+x_train =
+  train_df[features]
+  |> Nx.stack(axis: 1)
+
+y_train =
+  train_df[targets]
+  |> Nx.stack(axis: 1)
+
+x_test =
+  test_df[features]
+  |> Nx.stack(axis: 1)
+
+y_test =
+  test_df[targets]
+  |> Nx.stack(axis: 1)
+
+Kino.Layout.grid(
+  [
+    x_train,
+    y_train,
+    x_test,
+    y_test
+  ],
+  columns: 4,
+  boxed: true
+)
+```
+
+```elixir
+model = EXGBoost.train(x_train, y_train, obj: :reg_squarederror)
+```
+
+```elixir
+model =
+  EXGBoost.train(x_train, y_train,
+    obj: :reg_squarederror,
+    evals: [{x_train, y_train, "train"}]
+    #    num_boost_rounds: 15
+  )
+```
+
+```elixir
+y_pred = EXGBoost.predict(model, x_test)
+```
+
+```elixir
+Scholar.Metrics.Regression.mean_absolute_error(Nx.squeeze(y_test), y_pred)
+```
+
+```elixir
+Nx.abs(Nx.subtract(Nx.squeeze(y_test), y_pred))
+```
+
+```elixir
+# Comparaison "visuelle" des vecteurs de tests et des prédictions sur ces tests
+Kino.Layout.grid(
+  [
+    y_test,
+    y_pred |> Nx.reshape({567, 1})
+  ],
+  columns: 2,
+  boxed: true
+)
+```
+
+```elixir
+# Même chose, avec visuel "rapproché" en un seul vecteur
+
+Nx.concatenate([y_test, y_pred |> Nx.reshape({567, 1})], axis: 1)
+```
+
+```elixir
+# MAPE (mean_absolute_percentage_error)
+Scholar.Metrics.Regression.mean_absolute_percentage_error(Nx.squeeze(y_test), y_pred)
+```
+
+```elixir
+# Prise d'un exemplaire sample au hasard dans le dataset d'origine
+mono_test = df |> DF.sample(1)
+```
+
+```elixir
+to_xgboost =
+  fn tensor ->
+    tensor |> Nx.stack(axis: 1)
+  end
+```
+
+```elixir
+# Visualisation du sample qu'on va prédire (colonne 1: les features, colonne 2 : l'objectif, ie: nb de places, colonne 3 et 4 la version "mangeable" par le XGBoost)
+Kino.Layout.grid(
+  [
+    mono_test[features],
+    mono_test[targets],
+    to_xgboost.(mono_test[features]),
+    to_xgboost.(mono_test[targets])
+  ],
+  columns: 4,
+  boxed: true
+)
+```
+
+```elixir
+mono_predict =
+  model
+  |> EXGBoost.predict(to_xgboost.(mono_test[features]))
+
+Kino.Layout.grid(
+  [
+    mono_predict,
+    mono_test[targets]
+  ],
+  columns: 2,
+  boxed: true
+)
+```
+
+```elixir
+sample_test = df |> DF.sample(1)
+
+prediction =
+  model
+  |> EXGBoost.predict(to_xgboost.(sample_test[features]))
+
+Kino.Layout.grid(
+  [
+    sample_test[features],
+    sample_test[targets],
+    prediction
+  ],
+  columns: 3,
+  boxed: true
+)
+```
